@@ -23,19 +23,20 @@ fi
 # 修改 release-upgrades 文件，强制升级到开发版
 sudo sed -i 's/^Prompt=lts/Prompt=normal/' /etc/update-manager/release-upgrades
 
-# 检查可用的新版本
+# 使用 apt-cache 获取当前发行版的可用版本
 echo "正在检查可用版本..."
-upgrade_info=$(do-release-upgrade -c)
-
-# 如果没有可用的版本
-if [[ "$upgrade_info" == *"No new release found"* ]]; then
-  echo "没有检测到新版本升级。"
-  exit 0
+if [[ $(lsb_release -i | awk '{print $2}') == "Ubuntu" ]]; then
+  # Ubuntu 系统
+  available_versions=$(apt-cache showpkg ubuntu-release-upgrader-core | grep "Version:" | awk '{print $2}')
+elif [[ $(lsb_release -i | awk '{print $2}') == "Debian" ]]; then
+  # Debian 系统
+  available_versions=$(apt-cache showpkg debian-release-upgrader-core | grep "Version:" | awk '{print $2}')
+else
+  echo "无法识别系统版本."
+  exit 1
 fi
 
-# 获取所有候选版本
-available_versions=$(echo "$upgrade_info" | grep -oP 'Candidate version: \K.*')
-
+# 如果没有可用的版本
 if [ -z "$available_versions" ]; then
   echo "没有检测到新版本升级。"
   exit 0
