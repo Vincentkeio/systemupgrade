@@ -78,35 +78,24 @@ echo "代号: $SYSTEM_CODENAME"
 echo "内核版本: $KERNEL_VERSION"
 echo "系统架构: $SYSTEM_ARCH"
 
-# 获取当前版本并获取可用版本列表
-current_version=$(lsb_release -r | awk '{print $2}')
-echo "当前版本: $current_version"
-
-# 获取所有可用版本（通过 do-release-upgrade 命令获取）
-get_available_versions() {
-    local system_type=$1
-    available_versions=()
-
-    if [[ "$system_type" == "ubuntu" ]]; then
-        # 使用 do-release-upgrade 列出所有可用版本
-        available_versions=($(do-release-upgrade -c | grep "Available upgrade" | awk '{print $4}'))
-    elif [[ "$system_type" == "debian" ]]; then
-        # 获取 Debian 的所有可用版本
-        available_versions=($(apt-cache show debian-release-upgrader-core | grep "Version:" | awk '{print $2}'))
-    fi
-
-    echo "${available_versions[@]}"
-}
-
-# 临时切换源以允许检测开发版和过渡版
+# 临时切换源为开发版源以检测更新版本
 switch_to_dev_sources() {
     echo "临时切换源为开发版源以检测更新版本..."
 
-    sudo cp /etc/apt/sources.list /etc/apt/sources.list.bak  # 备份原来的 sources.list
-    sudo sed -i 's/^\(deb .*\) main$/\1 universe restricted multiverse/' /etc/apt/sources.list  # 更新源
+    # 备份原来的 sources.list
+    sudo cp /etc/apt/sources.list /etc/apt/sources.list.bak
 
-    # 使用开发版源
+    # 使用主版本、开发版、提议版和宇宙版等
+    sudo sed -i 's/^deb http:\/\/archive.ubuntu.com\/ubuntu/\
+deb http:\/\/archive.ubuntu.com\/ubuntu/g' /etc/apt/sources.list
+
     sudo sed -i "s/$SYSTEM_CODENAME/$(lsb_release -c | awk '{print $2}')/g" /etc/apt/sources.list
+
+    # 还可以手动添加其他开发源和测试源
+    echo "deb http://archive.ubuntu.com/ubuntu/ $SYSTEM_CODENAME-proposed main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
+    echo "deb http://archive.ubuntu.com/ubuntu/ $SYSTEM_CODENAME-updates main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
+
+    # 更新包列表
     sudo apt update
 }
 
@@ -181,5 +170,5 @@ elif [[ "$SYSTEM_NAME" == "Debian" ]]; then
     sudo apt full-upgrade -y
 fi
 
-# 升级完成后
+# 升级完成后提示
 echo "系统升级完成，请重启计算机以应用更改。"
