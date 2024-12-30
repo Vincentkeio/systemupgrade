@@ -82,14 +82,14 @@ echo "系统架构: $SYSTEM_ARCH"
 current_version=$(lsb_release -r | awk '{print $2}')
 echo "当前版本: $current_version"
 
-# 获取所有可用版本（通过 apt-cache show 和 do-release-upgrade 获取）
+# 获取所有可用版本（通过 do-release-upgrade 命令获取）
 get_available_versions() {
     local system_type=$1
-    local codename=$2
     available_versions=()
 
     if [[ "$system_type" == "ubuntu" ]]; then
         # 获取 Ubuntu 的所有可用版本
+        # 使用 do-release-upgrade -c 命令列出可用的所有版本
         available_versions=($(do-release-upgrade -c | grep "Available upgrade" | awk '{print $4}'))
     elif [[ "$system_type" == "debian" ]]; then
         # 获取 Debian 的所有可用版本
@@ -100,7 +100,7 @@ get_available_versions() {
 }
 
 # 获取系统的所有可用版本
-available_versions=$(get_available_versions "$SYSTEM_NAME" "$SYSTEM_CODENAME")
+available_versions=$(get_available_versions "$SYSTEM_NAME")
 
 # 如果没有可用版本
 if [ -z "$available_versions" ]; then
