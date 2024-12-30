@@ -80,76 +80,71 @@ echo "系统架构: $SYSTEM_ARCH"
 
 #!/bin/bash
 
-# Step 1: 备份系统（推荐）
-backup_system() {
-    echo "建议您在开始之前备份系统。"
-    echo "可以使用 Timeshift 工具或其他方式进行备份。"
-    echo "建议执行备份后再继续。"
-    echo "如果您已经备份，按任意键继续..."
-    read -n 1
-}
-
-# Step 2: 更新软件包
-update_packages() {
-    echo "升级当前系统的软件包..."
+# 函数：清理重复的源条目
+clean_duplicate_sources() {
+    echo "清理重复的源条目..."
+    sudo sort /etc/apt/sources.list | uniq | sudo tee /etc/apt/sources.list > /dev/null
     sudo apt update
-    sudo apt upgrade -y
-    sudo reboot
+    echo "重复条目已清理并更新软件包列表。"
 }
 
-# Step 3: 安装 update-manager-core
-install_update_manager_core() {
-    echo "安装 update-manager-core（如果没有安装的话）..."
+# 函数：检查当前系统版本
+get_current_version() {
+    echo "当前系统信息："
+    lsb_release -a
+    echo "当前内核版本："
+    uname -r
+}
+
+# 函数：安装升级管理器
+install_update_manager() {
+    # 安装 update-manager-core 包
+    echo "安装 update-manager-core..."
     sudo apt install update-manager-core -y
 }
 
-# Step 4: 修改 /etc/update-manager/release-upgrades 配置，允许非 LTS 升级
-modify_upgrade_config() {
-    echo "修改 /etc/update-manager/release-upgrades 配置，允许非 LTS 升级..."
-    sudo sed -i 's/Prompt=lts/Prompt=normal/' /etc/update-manager/release-upgrades
+# 函数：升级系统版本
+upgrade_system() {
+    # 确保系统包是最新的
+    echo "更新系统包..."
+    sudo apt update && sudo apt upgrade -y && sudo apt dist-upgrade -y
+    sudo reboot
+    
+    # 重新获取系统信息
+    echo "系统重新启动中..."
+    sleep 10
+    lsb_release -a
+    uname -r
+
+    # 检查是否为LTS版本，若是LTS版本则提示进行升级
+    echo "检查是否有新的LTS版本..."
+    current_version=$(lsb_release -c | awk '{print $2}')
+    echo "当前版本：$current_version"
+
+    # 执行升级
+    if [[ "$current_version" == "jammy" ]]; then
+        echo "您当前使用的是 Ubuntu 22.04 LTS (Jammy)版本，正在升级到 24.04 LTS..."
+        sudo do-release-upgrade -d -y
+    elif [[ "$current_version" == "focal" ]]; then
+        echo "您当前使用的是 Ubuntu 20.04 LTS (Focal)版本，正在升级到 24.04 LTS..."
+        sudo do-release-upgrade -d -y
+    else
+        echo "当前版本未能检测到更新。"
+    fi
 }
 
-# Step 5: 切换到开发版源（确保可以检测到 Ubuntu 24）
-switch_to_dev_sources() {
-    echo "切换到开发版源以检测 Ubuntu 24..."
-    sudo cp /etc/apt/sources.list /etc/apt/sources.list.bak  # 备份原源配置
-    SYSTEM_CODENAME=$(lsb_release -c | awk '{print $2}')
+# 主程序：执行升级步骤
+echo "开始升级流程..."
 
-    # 修改源为开发版和提议版源
-    sudo sed -i "s/^deb http:\/\/archive.ubuntu.com\/ubuntu/\
-deb http:\/\/archive.ubuntu.com\/ubuntu/g" /etc/apt/sources.list
-    echo "deb http://archive.ubuntu.com/ubuntu/ $SYSTEM_CODENAME-proposed main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
-    echo "deb http://archive.ubuntu.com/ubuntu/ $SYSTEM_CODENAME-updates main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
+# 1. 清理重复源条目
+clean_duplicate_sources
 
-    # 更新包列表
-    sudo apt update
-}
+# 2. 获取当前系统信息
+get_current_version
 
-# Step 6: 执行系统升级
-perform_upgrade() {
-    echo "开始升级到 Ubuntu 24.04 LTS..."
-    sudo do-release-upgrade -d
-}
+# 3. 安装更新管理工具
+install_update_manager
 
-# Step 7: 恢复源配置
-restore_sources() {
-    echo "恢复原来的源配置..."
-    sudo cp /etc/apt/sources.list.bak /etc/apt/sources.list
-    sudo apt update
-}
-
-# 主升级过程
-main_upgrade_process() {
-    backup_system  # 备份系统
-    update_packages  # 更新当前系统包
-    install_update_manager_core  # 安装 update-manager-core
-    modify_upgrade_config  # 允许非 LTS 升级
-    switch_to_dev_sources  # 切换到开发版源以检测更新
-    perform_upgrade  # 执行升级
-    restore_sources  # 恢复原源配置
-    echo "升级完成，请重启计算机以应用更改。"
-}
-
-# 执行升级
-main_upgrade_process
+# 4. 升级系统
+upgrade_system
 
