@@ -88,8 +88,7 @@ get_available_versions() {
     available_versions=()
 
     if [[ "$system_type" == "ubuntu" ]]; then
-        # 获取 Ubuntu 的所有可用版本
-        # 使用 do-release-upgrade -c 命令列出可用的所有版本
+        # 使用 do-release-upgrade 列出所有可用版本
         available_versions=($(do-release-upgrade -c | grep "Available upgrade" | awk '{print $4}'))
     elif [[ "$system_type" == "debian" ]]; then
         # 获取 Debian 的所有可用版本
@@ -99,8 +98,29 @@ get_available_versions() {
     echo "${available_versions[@]}"
 }
 
+# 临时切换源以允许检测开发版和过渡版
+switch_to_dev_sources() {
+    echo "临时切换源为开发版源以检测更新版本..."
+
+    sudo cp /etc/apt/sources.list /etc/apt/sources.list.bak  # 备份原来的 sources.list
+    sudo sed -i 's/^\(deb .*\) main$/\1 universe restricted multiverse/' /etc/apt/sources.list  # 更新源
+
+    # 使用开发版源
+    sudo sed -i "s/$SYSTEM_CODENAME/$(lsb_release -c | awk '{print $2}')/g" /etc/apt/sources.list
+    sudo apt update
+}
+
+# 恢复源配置
+restore_sources() {
+    echo "恢复原来的源配置..."
+    sudo cp /etc/apt/sources.list.bak /etc/apt/sources.list
+    sudo apt update
+}
+
 # 获取系统的所有可用版本
+switch_to_dev_sources  # 切换到开发版源
 available_versions=$(get_available_versions "$SYSTEM_NAME")
+restore_sources  # 恢复源
 
 # 如果没有可用版本
 if [ -z "$available_versions" ]; then
@@ -161,5 +181,5 @@ elif [[ "$SYSTEM_NAME" == "Debian" ]]; then
     sudo apt full-upgrade -y
 fi
 
-# 升级完成后提示
+# 升级完成后
 echo "系统升级完成，请重启计算机以应用更改。"
