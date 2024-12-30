@@ -2,11 +2,15 @@
 
 # 获取系统详细信息
 get_system_info() {
-    echo "获取当前系统的详细版本信息..."
+    # 默认系统信息
+    SYSTEM_NAME=""
+    SYSTEM_CODENAME=""
+    SYSTEM_VERSION=""
+    KERNEL_VERSION=$(uname -r)
+    SYSTEM_ARCH=$(uname -m)
 
-    # 1. 获取操作系统相关信息
+    # 1. 通过 /etc/os-release 获取系统信息
     if [[ -f /etc/os-release ]]; then
-        echo "通过 /etc/os-release 获取系统信息"
         source /etc/os-release
         SYSTEM_NAME=$NAME
         SYSTEM_CODENAME=$VERSION_CODENAME
@@ -14,53 +18,42 @@ get_system_info() {
     fi
 
     # 2. 如果 /etc/os-release 不存在，尝试使用 lsb_release 命令
-    if command -v lsb_release &>/dev/null; then
-        echo "通过 lsb_release 命令获取系统信息"
+    if [[ -z "$SYSTEM_NAME" ]] && command -v lsb_release &>/dev/null; then
         SYSTEM_NAME=$(lsb_release -i | awk '{print $2}')
         SYSTEM_CODENAME=$(lsb_release -c | awk '{print $2}')
         SYSTEM_VERSION=$(lsb_release -r | awk '{print $2}')
     fi
 
     # 3. 如果 lsb_release 不可用，尝试读取 /etc/issue 文件
-    if [[ -f /etc/issue ]]; then
-        echo "通过 /etc/issue 获取系统信息"
+    if [[ -z "$SYSTEM_NAME" ]] && [[ -f /etc/issue ]]; then
         SYSTEM_NAME=$(head -n 1 /etc/issue | awk '{print $1}')
         SYSTEM_CODENAME=$(head -n 1 /etc/issue | awk '{print $2}')
         SYSTEM_VERSION=$(head -n 1 /etc/issue | awk '{print $3}')
     fi
 
     # 4. 尝试读取 /etc/debian_version (适用于 Debian 系统)
-    if [[ -f /etc/debian_version ]]; then
-        echo "通过 /etc/debian_version 获取系统信息"
+    if [[ -z "$SYSTEM_NAME" ]] && [[ -f /etc/debian_version ]]; then
         SYSTEM_NAME="Debian"
         SYSTEM_CODENAME=$(cat /etc/debian_version)
         SYSTEM_VERSION=$SYSTEM_CODENAME
     fi
 
     # 5. 使用 dpkg 获取版本信息
-    if command -v dpkg &>/dev/null; then
-        echo "通过 dpkg 获取系统信息"
+    if [[ -z "$SYSTEM_NAME" ]] && command -v dpkg &>/dev/null; then
         SYSTEM_NAME=$(dpkg --status lsb-release | grep "Package" | awk '{print $2}')
         SYSTEM_CODENAME=$(dpkg --status lsb-release | grep "Version" | awk '{print $2}')
         SYSTEM_VERSION=$SYSTEM_CODENAME
     fi
 
     # 6. 使用 hostnamectl 获取系统信息（适用于 Systemd 系统）
-    if command -v hostnamectl &>/dev/null; then
-        echo "通过 hostnamectl 获取系统信息"
+    if [[ -z "$SYSTEM_NAME" ]] && command -v hostnamectl &>/dev/null; then
         SYSTEM_NAME=$(hostnamectl | grep "Operating System" | awk -F ' : ' '{print $2}' | awk '{print $1}')
         SYSTEM_CODENAME=$(hostnamectl | grep "Operating System" | awk -F ' : ' '{print $2}' | awk '{print $2}')
         SYSTEM_VERSION=$SYSTEM_CODENAME
     fi
 
-    # 7. 获取内核信息
-    KERNEL_VERSION=$(uname -r)
-
-    # 8. 获取系统架构
-    SYSTEM_ARCH=$(uname -m)
-
-    # 如果所有方法都无法获取系统信息，退出
-    if [[ -z "$SYSTEM_NAME" || -z "$SYSTEM_CODENAME" || -z "$SYSTEM_VERSION" || -z "$KERNEL_VERSION" || -z "$SYSTEM_ARCH" ]]; then
+    # 如果没有获取到信息，退出
+    if [[ -z "$SYSTEM_NAME" || -z "$SYSTEM_CODENAME" || -z "$SYSTEM_VERSION" ]]; then
         echo "无法获取系统信息"
         exit 1
     fi
@@ -69,15 +62,14 @@ get_system_info() {
 # 获取系统信息
 get_system_info
 
-# 显示详细信息
-echo "系统信息："
+# 显示系统详细信息
 echo "操作系统: $SYSTEM_NAME"
 echo "版本号: $SYSTEM_VERSION"
 echo "代号: $SYSTEM_CODENAME"
 echo "内核版本: $KERNEL_VERSION"
 echo "系统架构: $SYSTEM_ARCH"
 
-# 检查是否为 Ubuntu 或 Debian 系统
+# 提示当前系统是 Ubuntu 还是 Debian
 if [[ "$SYSTEM_NAME" == "Ubuntu" ]]; then
     SYSTEM_TYPE="ubuntu"
 elif [[ "$SYSTEM_NAME" == "Debian" ]]; then
@@ -87,28 +79,11 @@ else
     exit 1
 fi
 
-# 显示当前版本并列出所有可用的版本
-echo "当前系统版本: $SYSTEM_VERSION"
-
-# 检查并更新系统
-echo "正在更新系统..."
-sudo apt update && sudo apt upgrade -y
-
-# 确保 do-release-upgrade 工具可用（仅适用于 Ubuntu）
-if [[ "$SYSTEM_TYPE" == "ubuntu" && ! $(command -v do-release-upgrade) ]]; then
-    echo "未找到 do-release-upgrade 工具，正在安装..."
-    sudo apt install -y ubuntu-release-upgrader-core
-fi
-
-# 修改 release-upgrades 文件，允许所有版本升级
-echo "正在修改系统升级设置，允许所有版本升级..."
-sudo sed -i 's/^Prompt=lts/Prompt=normal/' /etc/update-manager/release-upgrades
-
-# 获取当前版本信息
+# 获取当前版本并获取可用版本列表
 current_version=$(lsb_release -r | awk '{print $2}')
 echo "当前版本: $current_version"
 
-# 定义一个函数来获取并列出所有可用版本
+# 获取可用版本列表（通过 Ubuntu 或 Debian 的 release-upgrader 获取）
 get_available_versions() {
     local system_type=$1
     local codename=$2
@@ -134,7 +109,7 @@ if [ -z "$available_versions" ]; then
   exit 0
 fi
 
-# 过滤出比当前版本更新的版本（包括完全版、实验版、开发版等）
+# 检测出所有比当前版本更新的版本（包括完全版、实验版、开发版等）
 echo "检测到以下可用版本（比当前版本更新）: "
 versions=()
 for version in $available_versions; do
