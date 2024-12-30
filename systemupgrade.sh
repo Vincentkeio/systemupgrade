@@ -80,26 +80,42 @@ echo "系统架构: $SYSTEM_ARCH"
 
 #!/bin/bash
 
-# 函数：检查并安装 update-manager-core
-check_and_install_update_manager() {
-    echo "检查并安装 update-manager-core..."
-    if ! dpkg -l | grep -q update-manager-core; then
-        sudo apt update
-        sudo apt install update-manager-core -y
-    fi
+# Step 1: 备份系统（推荐）
+backup_system() {
+    echo "建议您在开始之前备份系统。"
+    echo "可以使用 Timeshift 工具或其他方式进行备份。"
+    echo "建议执行备份后再继续。"
+    echo "如果您已经备份，按任意键继续..."
+    read -n 1
 }
 
-# 函数：切换到开发版源以检测更新版本
+# Step 2: 更新软件包
+update_packages() {
+    echo "升级当前系统的软件包..."
+    sudo apt update
+    sudo apt upgrade -y
+    sudo reboot
+}
+
+# Step 3: 安装 update-manager-core
+install_update_manager_core() {
+    echo "安装 update-manager-core（如果没有安装的话）..."
+    sudo apt install update-manager-core -y
+}
+
+# Step 4: 修改 /etc/update-manager/release-upgrades 配置，允许非 LTS 升级
+modify_upgrade_config() {
+    echo "修改 /etc/update-manager/release-upgrades 配置，允许非 LTS 升级..."
+    sudo sed -i 's/Prompt=lts/Prompt=normal/' /etc/update-manager/release-upgrades
+}
+
+# Step 5: 切换到开发版源（确保可以检测到 Ubuntu 24）
 switch_to_dev_sources() {
-    echo "临时切换源为开发版源以检测更新版本..."
-
-    # 备份原来的 sources.list
-    sudo cp /etc/apt/sources.list /etc/apt/sources.list.bak
-
-    # 获取当前的 Ubuntu 代号
+    echo "切换到开发版源以检测 Ubuntu 24..."
+    sudo cp /etc/apt/sources.list /etc/apt/sources.list.bak  # 备份原源配置
     SYSTEM_CODENAME=$(lsb_release -c | awk '{print $2}')
 
-    # 启用开发版源和提议版源
+    # 修改源为开发版和提议版源
     sudo sed -i "s/^deb http:\/\/archive.ubuntu.com\/ubuntu/\
 deb http:\/\/archive.ubuntu.com\/ubuntu/g" /etc/apt/sources.list
     echo "deb http://archive.ubuntu.com/ubuntu/ $SYSTEM_CODENAME-proposed main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
@@ -109,64 +125,31 @@ deb http:\/\/archive.ubuntu.com\/ubuntu/g" /etc/apt/sources.list
     sudo apt update
 }
 
-# 恢复源配置
+# Step 6: 执行系统升级
+perform_upgrade() {
+    echo "开始升级到 Ubuntu 24.04 LTS..."
+    sudo do-release-upgrade -d
+}
+
+# Step 7: 恢复源配置
 restore_sources() {
     echo "恢复原来的源配置..."
     sudo cp /etc/apt/sources.list.bak /etc/apt/sources.list
     sudo apt update
 }
 
-# 修改 /etc/update-manager/release-upgrades 以允许非 LTS 升级
-allow_non_lts_upgrade() {
-    echo "修改 /etc/update-manager/release-upgrades 配置以允许非 LTS 升级..."
-    sudo sed -i 's/Prompt=lts/Prompt=normal/' /etc/update-manager/release-upgrades
-}
-
-# 获取当前系统的版本号
-get_current_version() {
-    SYSTEM_VERSION=$(lsb_release -sr)
-    SYSTEM_NAME=$(lsb_release -si)
-    echo "$SYSTEM_VERSION"
-}
-
-# 检查是否可以升级
-check_for_upgrades() {
-    echo "检查是否可以升级..."
-    sudo do-release-upgrade -d --check-dist-upgrade
-
-    if [ $? -ne 0 ]; then
-        echo "当前系统已是最新版，无可用升级。"
-        exit 0
-    fi
+# 主升级过程
+main_upgrade_process() {
+    backup_system  # 备份系统
+    update_packages  # 更新当前系统包
+    install_update_manager_core  # 安装 update-manager-core
+    modify_upgrade_config  # 允许非 LTS 升级
+    switch_to_dev_sources  # 切换到开发版源以检测更新
+    perform_upgrade  # 执行升级
+    restore_sources  # 恢复原源配置
+    echo "升级完成，请重启计算机以应用更改。"
 }
 
 # 执行升级
-perform_upgrade() {
-    # 获取当前系统版本
-    SYSTEM_VERSION=$(get_current_version)
+main_upgrade_process
 
-    # 检查并安装 update-manager-core
-    check_and_install_update_manager
-
-    # 修改配置文件，允许非 LTS 升级
-    allow_non_lts_upgrade
-
-    # 切换到开发版源以便检测更多版本
-    switch_to_dev_sources
-
-    # 检查系统是否有可用版本升级
-    check_for_upgrades
-
-    # 进行版本升级
-    echo "开始升级到最新版本..."
-    sudo do-release-upgrade -d -f DistUpgradeViewNonInteractive
-
-    # 恢复源配置
-    restore_sources
-
-    # 升级完成后提示
-    echo "系统升级完成，请重启计算机以应用更改。"
-}
-
-# 执行升级过程
-perform_upgrade
