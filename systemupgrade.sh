@@ -78,6 +78,8 @@ echo "代号: $SYSTEM_CODENAME"
 echo "内核版本: $KERNEL_VERSION"
 echo "系统架构: $SYSTEM_ARCH"
 
+#!/bin/bash
+
 # 临时切换源为开发版源以检测更新版本
 switch_to_dev_sources() {
     echo "临时切换源为开发版源以检测更新版本..."
@@ -106,17 +108,16 @@ restore_sources() {
     sudo apt update
 }
 
-# 获取所有可用版本
-get_available_versions() {
-    local package_name="ubuntu-release-upgrader"
-    versions=$(apt-cache madison "$package_name" | awk '{print $3}')
-    echo "$versions"
-}
-
 # 获取当前系统的版本号
 get_current_version() {
     SYSTEM_VERSION=$(lsb_release -sr)
     echo "$SYSTEM_VERSION"
+}
+
+# 修改 /etc/update-manager/release-upgrades 以允许非 LTS 升级
+allow_non_lts_upgrade() {
+    echo "修改 /etc/update-manager/release-upgrades 配置以允许非 LTS 升级..."
+    sudo sed -i 's/Prompt=lts/Prompt=normal/' /etc/update-manager/release-upgrades
 }
 
 # 获取所有可用版本（包括开发版、提议版等）
@@ -136,42 +137,43 @@ perform_upgrade() {
 
     # 获取所有可用版本
     available_versions=$(get_available_versions)
+
     restore_sources  # 恢复原来的源配置
 
     # 如果没有可用版本
     if [ -z "$available_versions" ]; then
-      echo "没有检测到新版本升级。"
-      exit 0
+        echo "没有检测到新版本升级。"
+        exit 0
     fi
 
     # 检测出所有比当前版本更新的版本（包括完全版、实验版、开发版等）
     echo "检测到以下可用版本（比当前版本更新）: "
     versions=()
     for version in $available_versions; do
-      if [[ "$version" > "$SYSTEM_VERSION" ]]; then
-        versions+=("$version")
-      fi
+        if [[ "$version" > "$SYSTEM_VERSION" ]]; then
+            versions+=("$version")
+        fi
     done
 
     # 如果没有检测到可用的更高版本
     if [ ${#versions[@]} -eq 0 ]; then
-      echo "已是最新版，无可用升级。"
-      exit 0
+        echo "已是最新版，无可用升级。"
+        exit 0
     fi
 
     # 列出可用版本并让用户选择
     i=1
     for version in "${versions[@]}"; do
-      echo "$i. $version"
-      ((i++))
+        echo "$i. $version"
+        ((i++))
     done
 
     # 用户选择要升级到的版本
     read -p "请输入要升级到的版本号 (1-${#versions[@]}): " choice
 
     if [[ "$choice" -lt 1 || "$choice" -gt "${#versions[@]}" ]]; then
-      echo "无效的选择，脚本退出."
-      exit 1
+        echo "无效的选择，脚本退出."
+        exit 1
     fi
 
     # 获取选择的版本
@@ -180,7 +182,10 @@ perform_upgrade() {
 
     # 执行升级（Ubuntu 和 Debian 的升级方式不同）
     if [[ "$SYSTEM_NAME" == "Ubuntu" ]]; then
-        # Ubuntu 使用 do-release-upgrade 进行升级
+        # 修改升级配置以允许非 LTS 升级
+        allow_non_lts_upgrade
+
+        # 执行升级
         echo "正在升级到 $selected_version..."
         sudo do-release-upgrade -d -f DistUpgradeViewNonInteractive
     elif [[ "$SYSTEM_NAME" == "Debian" ]]; then
@@ -203,4 +208,5 @@ perform_upgrade() {
 
 # 执行升级
 perform_upgrade
+
 
