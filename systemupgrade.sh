@@ -21,18 +21,20 @@ if ! command -v do-release-upgrade &> /dev/null; then
 fi
 
 # 修改 release-upgrades 文件，强制升级到开发版
+echo "正在修改系统升级设置，允许所有版本升级..."
 sudo sed -i 's/^Prompt=lts/Prompt=normal/' /etc/update-manager/release-upgrades
 
-# 使用 apt-cache 获取所有可用版本
-echo "正在检查可用版本..."
+# 使用 apt-cache 获取所有可用的升级版本
+echo "正在获取所有可用的版本..."
+available_versions=()
 
-# 获取 Ubuntu 或 Debian 版本信息
+# 获取当前系统包和候选版本
 if [[ $(lsb_release -i | awk '{print $2}') == "Ubuntu" ]]; then
-  # 获取 Ubuntu 系统的所有可用版本
-  available_versions=$(apt-cache show ubuntu-release-upgrader-core | grep "Version:" | awk '{print $2}')
+  # 获取 Ubuntu 系统的所有候选版本
+  available_versions+=($(apt-cache show ubuntu-release-upgrader-core | grep "Version:" | awk '{print $2}'))
 elif [[ $(lsb_release -i | awk '{print $2}') == "Debian" ]]; then
-  # 获取 Debian 系统的所有可用版本
-  available_versions=$(apt-cache show debian-release-upgrader-core | grep "Version:" | awk '{print $2}')
+  # 获取 Debian 系统的所有候选版本
+  available_versions+=($(apt-cache show debian-release-upgrader-core | grep "Version:" | awk '{print $2}'))
 else
   echo "无法识别系统版本."
   exit 1
@@ -43,15 +45,15 @@ current_version=$(lsb_release -r | awk '{print $2}')
 echo "当前版本: $current_version"
 
 # 如果没有可用的版本
-if [ -z "$available_versions" ]; then
+if [ ${#available_versions[@]} -eq 0 ]; then
   echo "没有检测到新版本升级。"
   exit 0
 fi
 
-# 过滤出比当前版本更新的版本
+# 过滤出比当前版本更新的版本（包括完全版、实验版、开发版等）
 echo "检测到以下可用版本（比当前版本更新）: "
 versions=()
-for version in $available_versions; do
+for version in "${available_versions[@]}"; do
   if [[ "$version" > "$current_version" ]]; then
     versions+=("$version")
   fi
