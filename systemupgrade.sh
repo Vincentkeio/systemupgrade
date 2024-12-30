@@ -85,13 +85,13 @@ switch_to_dev_sources() {
     # 备份原来的 sources.list
     sudo cp /etc/apt/sources.list /etc/apt/sources.list.bak
 
-    # 使用主版本、开发版、提议版和宇宙版等
+    # 修改 sources.list，启用开发版和提议版源
     sudo sed -i 's/^deb http:\/\/archive.ubuntu.com\/ubuntu/\
 deb http:\/\/archive.ubuntu.com\/ubuntu/g' /etc/apt/sources.list
 
     sudo sed -i "s/$SYSTEM_CODENAME/$(lsb_release -c | awk '{print $2}')/g" /etc/apt/sources.list
 
-    # 还可以手动添加其他开发源和测试源
+    # 启用开发版源和提议版源
     echo "deb http://archive.ubuntu.com/ubuntu/ $SYSTEM_CODENAME-proposed main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
     echo "deb http://archive.ubuntu.com/ubuntu/ $SYSTEM_CODENAME-updates main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
 
@@ -106,69 +106,101 @@ restore_sources() {
     sudo apt update
 }
 
-# 获取系统的所有可用版本
-switch_to_dev_sources  # 切换到开发版源
-available_versions=$(get_available_versions "$SYSTEM_NAME")
-restore_sources  # 恢复源
+# 获取所有可用版本
+get_available_versions() {
+    local package_name="ubuntu-release-upgrader"
+    versions=$(apt-cache madison "$package_name" | awk '{print $3}')
+    echo "$versions"
+}
 
-# 如果没有可用版本
-if [ -z "$available_versions" ]; then
-  echo "没有检测到新版本升级。"
-  exit 0
-fi
+# 获取当前系统的版本号
+get_current_version() {
+    SYSTEM_VERSION=$(lsb_release -sr)
+    echo "$SYSTEM_VERSION"
+}
 
-# 检测出所有比当前版本更新的版本（包括完全版、实验版、开发版等）
-echo "检测到以下可用版本（比当前版本更新）: "
-versions=()
-for version in $available_versions; do
-  if [[ "$version" > "$current_version" ]]; then
-    versions+=("$version")
-  fi
-done
+# 获取所有可用版本（包括开发版、提议版等）
+get_available_versions() {
+    local package_name="ubuntu-release-upgrader"
+    versions=$(apt-cache madison "$package_name" | awk '{print $3}')
+    echo "$versions"
+}
 
-# 如果没有检测到可用的更高版本
-if [ ${#versions[@]} -eq 0 ]; then
-  echo "已是最新版，无可用升级。"
-  exit 0
-fi
+# 升级过程
+perform_upgrade() {
+    # 获取当前系统版本
+    SYSTEM_VERSION=$(get_current_version)
 
-# 列出可用版本并让用户选择
-i=1
-for version in "${versions[@]}"; do
-  echo "$i. $version"
-  ((i++))
-done
+    # 切换到开发版源以便检测更多版本
+    switch_to_dev_sources
 
-# 用户选择要升级到的版本
-read -p "请输入要升级到的版本号 (1-${#versions[@]}): " choice
+    # 获取所有可用版本
+    available_versions=$(get_available_versions)
+    restore_sources  # 恢复原来的源配置
 
-if [[ "$choice" -lt 1 || "$choice" -gt "${#versions[@]}" ]]; then
-  echo "无效的选择，脚本退出."
-  exit 1
-fi
+    # 如果没有可用版本
+    if [ -z "$available_versions" ]; then
+      echo "没有检测到新版本升级。"
+      exit 0
+    fi
 
-# 获取选择的版本
-selected_version=${versions[$((choice - 1))]}
-echo "您选择了升级到: $selected_version"
+    # 检测出所有比当前版本更新的版本（包括完全版、实验版、开发版等）
+    echo "检测到以下可用版本（比当前版本更新）: "
+    versions=()
+    for version in $available_versions; do
+      if [[ "$version" > "$SYSTEM_VERSION" ]]; then
+        versions+=("$version")
+      fi
+    done
 
-# 执行升级（Ubuntu 和 Debian 的升级方式不同）
-if [[ "$SYSTEM_NAME" == "Ubuntu" ]]; then
-    # Ubuntu 使用 do-release-upgrade 进行升级
-    echo "正在升级到 $selected_version..."
-    sudo do-release-upgrade -d -f DistUpgradeViewNonInteractive
-elif [[ "$SYSTEM_NAME" == "Debian" ]]; then
-    # Debian 使用修改 /etc/apt/sources.list 来进行升级
-    echo "正在升级到 Debian $selected_version..."
+    # 如果没有检测到可用的更高版本
+    if [ ${#versions[@]} -eq 0 ]; then
+      echo "已是最新版，无可用升级。"
+      exit 0
+    fi
 
-    # 更新 sources.list 文件
-    sudo sed -i "s/$SYSTEM_CODENAME/$selected_version/g" /etc/apt/sources.list
+    # 列出可用版本并让用户选择
+    i=1
+    for version in "${versions[@]}"; do
+      echo "$i. $version"
+      ((i++))
+    done
 
-    # 更新包列表
-    sudo apt update
+    # 用户选择要升级到的版本
+    read -p "请输入要升级到的版本号 (1-${#versions[@]}): " choice
 
-    # 升级系统
-    sudo apt full-upgrade -y
-fi
+    if [[ "$choice" -lt 1 || "$choice" -gt "${#versions[@]}" ]]; then
+      echo "无效的选择，脚本退出."
+      exit 1
+    fi
 
-# 升级完成后提示
-echo "系统升级完成，请重启计算机以应用更改。"
+    # 获取选择的版本
+    selected_version=${versions[$((choice - 1))]}
+    echo "您选择了升级到: $selected_version"
+
+    # 执行升级（Ubuntu 和 Debian 的升级方式不同）
+    if [[ "$SYSTEM_NAME" == "Ubuntu" ]]; then
+        # Ubuntu 使用 do-release-upgrade 进行升级
+        echo "正在升级到 $selected_version..."
+        sudo do-release-upgrade -d -f DistUpgradeViewNonInteractive
+    elif [[ "$SYSTEM_NAME" == "Debian" ]]; then
+        # Debian 使用修改 /etc/apt/sources.list 来进行升级
+        echo "正在升级到 Debian $selected_version..."
+
+        # 更新 sources.list 文件
+        sudo sed -i "s/$SYSTEM_CODENAME/$selected_version/g" /etc/apt/sources.list
+
+        # 更新包列表
+        sudo apt update
+
+        # 升级系统
+        sudo apt full-upgrade -y
+    fi
+
+    # 升级完成后提示
+    echo "系统升级完成，请重启计算机以应用更改。"
+}
+
+# 执行升级
+perform_upgrade
+
