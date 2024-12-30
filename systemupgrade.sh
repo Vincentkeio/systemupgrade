@@ -109,8 +109,20 @@ if sudo do-release-upgrade -c | grep -q "No new release found"; then
     exit 0
 fi
 
-# 执行升级
-echo "检测到可用的新版本，准备升级到 Ubuntu 24.04..."
-sudo do-release-upgrade -d
+# 提示用户选择是否升级
+echo "检测到有新版本可用，当前系统版本为 Ubuntu 22.04，目标版本为 Ubuntu 24.04 LTS。"
+echo "是否继续升级到 Ubuntu 24.04 LTS？"
+echo "1) 是"
+echo "2) 否"
+read -p "请输入您的选择（1或2）: " choice
 
-echo "系统升级完成，按提示操作以完成升级。"
+# 判断用户选择
+if [ "$choice" -eq 1 ]; then
+    echo "开始升级到 Ubuntu 24.04 LTS..."
+    sudo do-release-upgrade -d
+    echo "系统升级完成，按提示操作以完成升级。"
+else
+    echo "您选择了不升级，退出升级流程。"
+    exit 0
+fi
+
