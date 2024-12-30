@@ -80,71 +80,37 @@ echo "系统架构: $SYSTEM_ARCH"
 
 #!/bin/bash
 
-# 函数：清理重复的源条目
-clean_duplicate_sources() {
-    echo "清理重复的源条目..."
-    sudo sort /etc/apt/sources.list | uniq | sudo tee /etc/apt/sources.list > /dev/null
-    sudo apt update
-    echo "重复条目已清理并更新软件包列表。"
-}
+# 检查当前系统是否为Ubuntu
+if ! grep -q "Ubuntu" /etc/os-release; then
+    echo "当前系统不是Ubuntu，无法进行Ubuntu版本升级。"
+    exit 1
+fi
 
-# 函数：检查当前系统版本
-get_current_version() {
-    echo "当前系统信息："
-    lsb_release -a
-    echo "当前内核版本："
-    uname -r
-}
+# 更新系统到最新
+echo "正在更新系统..."
+sudo apt update -y
+sudo apt upgrade -y
+sudo apt dist-upgrade -y
+sudo apt autoremove -y
+sudo reboot
 
-# 函数：安装升级管理器
-install_update_manager() {
-    # 安装 update-manager-core 包
-    echo "安装 update-manager-core..."
-    sudo apt install update-manager-core -y
-}
+# 安装 Update Manager Core，确保可以执行升级命令
+echo "安装 update-manager-core..."
+sudo apt install -y update-manager-core
 
-# 函数：升级系统版本
-upgrade_system() {
-    # 确保系统包是最新的
-    echo "更新系统包..."
-    sudo apt update && sudo apt upgrade -y && sudo apt dist-upgrade -y
-    sudo reboot
-    
-    # 重新获取系统信息
-    echo "系统重新启动中..."
-    sleep 10
-    lsb_release -a
-    uname -r
+# 设置升级策略以允许从 LTS 到 LTS 升级
+echo "修改升级策略..."
+sudo sed -i 's/Prompt=lts/Prompt=normal/' /etc/update-manager/release-upgrades
 
-    # 检查是否为LTS版本，若是LTS版本则提示进行升级
-    echo "检查是否有新的LTS版本..."
-    current_version=$(lsb_release -c | awk '{print $2}')
-    echo "当前版本：$current_version"
+# 检查是否有可用的新版本
+echo "检查是否有可用的Ubuntu新版本..."
+if sudo do-release-upgrade -c | grep -q "No new release found"; then
+    echo "当前已经是最新版本，没有可用的升级。"
+    exit 0
+fi
 
-    # 执行升级
-    if [[ "$current_version" == "jammy" ]]; then
-        echo "您当前使用的是 Ubuntu 22.04 LTS (Jammy)版本，正在升级到 24.04 LTS..."
-        sudo do-release-upgrade -d -y
-    elif [[ "$current_version" == "focal" ]]; then
-        echo "您当前使用的是 Ubuntu 20.04 LTS (Focal)版本，正在升级到 24.04 LTS..."
-        sudo do-release-upgrade -d -y
-    else
-        echo "当前版本未能检测到更新。"
-    fi
-}
+# 执行升级
+echo "检测到可用的新版本，准备升级到 Ubuntu 24.04..."
+sudo do-release-upgrade -d
 
-# 主程序：执行升级步骤
-echo "开始升级流程..."
-
-# 1. 清理重复源条目
-clean_duplicate_sources
-
-# 2. 获取当前系统信息
-get_current_version
-
-# 3. 安装更新管理工具
-install_update_manager
-
-# 4. 升级系统
-upgrade_system
-
+echo "系统升级完成，按提示操作以完成升级。"
