@@ -1,10 +1,10 @@
 #!/bin/bash
 
-# 获取系统版本的详细信息
+# 获取系统详细信息
 get_system_info() {
     echo "获取当前系统的详细版本信息..."
 
-    # 1. 尝试通过 /etc/os-release 获取
+    # 1. 获取操作系统相关信息
     if [[ -f /etc/os-release ]]; then
         echo "通过 /etc/os-release 获取系统信息"
         source /etc/os-release
@@ -53,8 +53,14 @@ get_system_info() {
         SYSTEM_VERSION=$SYSTEM_CODENAME
     fi
 
+    # 7. 获取内核信息
+    KERNEL_VERSION=$(uname -r)
+
+    # 8. 获取系统架构
+    SYSTEM_ARCH=$(uname -m)
+
     # 如果所有方法都无法获取系统信息，退出
-    if [[ -z "$SYSTEM_NAME" || -z "$SYSTEM_CODENAME" || -z "$SYSTEM_VERSION" ]]; then
+    if [[ -z "$SYSTEM_NAME" || -z "$SYSTEM_CODENAME" || -z "$SYSTEM_VERSION" || -z "$KERNEL_VERSION" || -z "$SYSTEM_ARCH" ]]; then
         echo "无法获取系统信息"
         exit 1
     fi
@@ -62,7 +68,14 @@ get_system_info() {
 
 # 获取系统信息
 get_system_info
-echo "系统信息: $SYSTEM_NAME $SYSTEM_VERSION ($SYSTEM_CODENAME)"
+
+# 显示详细信息
+echo "系统信息："
+echo "操作系统: $SYSTEM_NAME"
+echo "版本号: $SYSTEM_VERSION"
+echo "代号: $SYSTEM_CODENAME"
+echo "内核版本: $KERNEL_VERSION"
+echo "系统架构: $SYSTEM_ARCH"
 
 # 检查是否为 Ubuntu 或 Debian 系统
 if [[ "$SYSTEM_NAME" == "Ubuntu" ]]; then
