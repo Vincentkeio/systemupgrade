@@ -80,133 +80,94 @@ echo "系统架构: $SYSTEM_ARCH"
 
 #!/bin/bash
 
-# 临时切换源为开发版源以检测更新版本
-switch_to_dev_sources() {
-    echo "临时切换源为开发版源以检测更新版本..."
+# 检查当前系统是否为Debian或Ubuntu
+if ! grep -qE 'ubuntu|debian' /etc/os-release; then
+  echo "本脚本只支持Debian和Ubuntu系统."
+  exit 1
+fi
 
-    # 备份原来的 sources.list
-    sudo cp /etc/apt/sources.list /etc/apt/sources.list.bak
+# 提示：提醒用户备份数据
+echo "请确保已备份所有重要数据！系统升级可能会导致不稳定，建议备份重要文件。"
 
-    # 修改 sources.list，启用开发版和提议版源
-    sudo sed -i 's/^deb http:\/\/archive.ubuntu.com\/ubuntu/\
-deb http:\/\/archive.ubuntu.com\/ubuntu/g' /etc/apt/sources.list
+# 切换到 root 用户以确保有足够的权限
+if [ "$(id -u)" -ne 0 ]; then
+  echo "请使用 sudo -i 或 su 切换到 root 用户进行操作。"
+  exit 1
+fi
 
-    sudo sed -i "s/$SYSTEM_CODENAME/$(lsb_release -c | awk '{print $2}')/g" /etc/apt/sources.list
+# 更新当前系统，确保所有软件包都是最新的
+echo "正在更新现有的软件包列表..."
+apt update && apt upgrade -y && apt dist-upgrade -y
 
-    # 启用开发版源和提议版源
-    echo "deb http://archive.ubuntu.com/ubuntu/ $SYSTEM_CODENAME-proposed main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
-    echo "deb http://archive.ubuntu.com/ubuntu/ $SYSTEM_CODENAME-updates main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
+# 清理不需要的包
+echo "正在清理不需要的包..."
+apt autoremove -y && apt autoclean
 
-    # 更新包列表
-    sudo apt update
-}
+# 如果内核有更新，重启系统生效
+echo "如果内核更新了，请重新启动计算机以应用最新的内核。"
 
-# 恢复源配置
-restore_sources() {
-    echo "恢复原来的源配置..."
-    sudo cp /etc/apt/sources.list.bak /etc/apt/sources.list
-    sudo apt update
-}
+# 安装系统升级工具
+echo "正在安装必要的系统升级工具..."
+if grep -q 'ubuntu' /etc/os-release; then
+  # 如果是Ubuntu系统，安装 ubuntu-release-upgrader-core
+  apt install ubuntu-release-upgrader-core -y
+else
+  # 如果是Debian系统，安装 update-manager-core
+  apt install update-manager-core -y
+fi
 
-# 获取当前系统的版本号
-get_current_version() {
-    SYSTEM_VERSION=$(lsb_release -sr)
-    echo "$SYSTEM_VERSION"
-}
+# 修改 /etc/update-manager/release-upgrades 文件，确保 Prompt 设置为 lts
+echo "正在配置升级为 LTS 版本..."
+sed -i 's/^Prompt=.*$/Prompt=lts/' /etc/update-manager/release-upgrades
 
-# 修改 /etc/update-manager/release-upgrades 以允许非 LTS 升级
-allow_non_lts_upgrade() {
-    echo "修改 /etc/update-manager/release-upgrades 配置以允许非 LTS 升级..."
-    sudo sed -i 's/Prompt=lts/Prompt=normal/' /etc/update-manager/release-upgrades
-}
+# 方法一：使用 do-release-upgrade 升级
+echo "通过 do-release-upgrade 升级系统..."
+do-release-upgrade -d
 
-# 获取所有可用版本（包括开发版、提议版等）
-get_available_versions() {
-    local package_name="ubuntu-release-upgrader"
-    versions=$(apt-cache madison "$package_name" | awk '{print $3}')
-    echo "$versions"
-}
+# 如果用户选择跳过 do-release-upgrade 或升级失败，可以选择手动更新 apt 源
+echo "如果你希望手动更新 apt 源来升级，请继续执行以下步骤："
 
-# 升级过程
-perform_upgrade() {
-    # 获取当前系统版本
-    SYSTEM_VERSION=$(get_current_version)
+# 方法二：手动更新 apt 源文件（如果你希望手动升级）
+read -p "是否需要手动更新源文件并继续升级？(y/n): " answer
+if [[ "$answer" == "y" || "$answer" == "Y" ]]; then
+  echo "正在更新源文件，将旧版本替换为新的版本..."
 
-    # 切换到开发版源以便检测更多版本
-    switch_to_dev_sources
+  # 获取当前系统版本并决定替换为哪个版本
+  current_version=$(lsb_release -c | awk '{print $2}')
+  new_version=""
+  
+  if [[ "$current_version" == "jammy" ]]; then
+    new_version="noble"
+  elif [[ "$current_version" == "bullseye" ]]; then
+    new_version="bookworm"
+  else
+    echo "无法识别当前版本，无法自动替换。"
+    exit 1
+  fi
 
-    # 获取所有可用版本
-    available_versions=$(get_available_versions)
+  # 替换 apt 源中的旧版本为新版本
+  sed -i "s/$current_version/$new_version/g" /etc/apt/sources.list
+  sed -i "s/$current_version/$new_version/g" /etc/apt/sources.list.d/*.list
 
-    restore_sources  # 恢复原来的源配置
+  # 检查是否使用 DEB822 格式（Ubuntu 24.04 及以上）
+  if [[ -f /etc/apt/sources.list.d/ubuntu.sources || -f /etc/apt/sources.list.d/debian.sources ]]; then
+    echo "检测到 DEB822 格式的源文件，已为新的版本配置更新。"
+  else
+    echo "使用传统的 One-Line-Style 格式配置源文件。"
+  fi
 
-    # 如果没有可用版本
-    if [ -z "$available_versions" ]; then
-        echo "没有检测到新版本升级。"
-        exit 0
-    fi
+  # 更新系统
+  echo "更新软件包列表..."
+  apt update && apt upgrade -y && apt dist-upgrade -y
 
-    # 检测出所有比当前版本更新的版本（包括完全版、实验版、开发版等）
-    echo "检测到以下可用版本（比当前版本更新）: "
-    versions=()
-    for version in $available_versions; do
-        if [[ "$version" > "$SYSTEM_VERSION" ]]; then
-            versions+=("$version")
-        fi
-    done
+  echo "升级过程中可能会提示一些软件是否需要重启，选择 'Yes' 或按回车即可。"
+  echo "在升级过程中，配置文件更新时，请根据需求选择使用新配置文件或保留旧配置文件。"
 
-    # 如果没有检测到可用的更高版本
-    if [ ${#versions[@]} -eq 0 ]; then
-        echo "已是最新版，无可用升级。"
-        exit 0
-    fi
+  # 提示重启
+  echo "系统升级完成，请重启计算机。"
+fi
 
-    # 列出可用版本并让用户选择
-    i=1
-    for version in "${versions[@]}"; do
-        echo "$i. $version"
-        ((i++))
-    done
-
-    # 用户选择要升级到的版本
-    read -p "请输入要升级到的版本号 (1-${#versions[@]}): " choice
-
-    if [[ "$choice" -lt 1 || "$choice" -gt "${#versions[@]}" ]]; then
-        echo "无效的选择，脚本退出."
-        exit 1
-    fi
-
-    # 获取选择的版本
-    selected_version=${versions[$((choice - 1))]}
-    echo "您选择了升级到: $selected_version"
-
-    # 执行升级（Ubuntu 和 Debian 的升级方式不同）
-    if [[ "$SYSTEM_NAME" == "Ubuntu" ]]; then
-        # 修改升级配置以允许非 LTS 升级
-        allow_non_lts_upgrade
-
-        # 执行升级
-        echo "正在升级到 $selected_version..."
-        sudo do-release-upgrade -d -f DistUpgradeViewNonInteractive
-    elif [[ "$SYSTEM_NAME" == "Debian" ]]; then
-        # Debian 使用修改 /etc/apt/sources.list 来进行升级
-        echo "正在升级到 Debian $selected_version..."
-
-        # 更新 sources.list 文件
-        sudo sed -i "s/$SYSTEM_CODENAME/$selected_version/g" /etc/apt/sources.list
-
-        # 更新包列表
-        sudo apt update
-
-        # 升级系统
-        sudo apt full-upgrade -y
-    fi
-
-    # 升级完成后提示
-    echo "系统升级完成，请重启计算机以应用更改。"
-}
-
-# 执行升级
-perform_upgrade
-
+# 升级完成后查看当前版本
+echo "升级后，查看系统版本..."
+lsb_release -a
 
