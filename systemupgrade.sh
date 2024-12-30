@@ -1,14 +1,16 @@
 #!/bin/bash
 
-# 定义获取系统版本的函数
+# 获取系统版本的详细信息
 get_system_info() {
+    echo "获取当前系统的详细版本信息..."
+
     # 1. 尝试通过 /etc/os-release 获取
     if [[ -f /etc/os-release ]]; then
         echo "通过 /etc/os-release 获取系统信息"
         source /etc/os-release
         SYSTEM_NAME=$NAME
         SYSTEM_CODENAME=$VERSION_CODENAME
-        return 0
+        SYSTEM_VERSION=$VERSION
     fi
 
     # 2. 如果 /etc/os-release 不存在，尝试使用 lsb_release 命令
@@ -16,7 +18,7 @@ get_system_info() {
         echo "通过 lsb_release 命令获取系统信息"
         SYSTEM_NAME=$(lsb_release -i | awk '{print $2}')
         SYSTEM_CODENAME=$(lsb_release -c | awk '{print $2}')
-        return 0
+        SYSTEM_VERSION=$(lsb_release -r | awk '{print $2}')
     fi
 
     # 3. 如果 lsb_release 不可用，尝试读取 /etc/issue 文件
@@ -24,7 +26,7 @@ get_system_info() {
         echo "通过 /etc/issue 获取系统信息"
         SYSTEM_NAME=$(head -n 1 /etc/issue | awk '{print $1}')
         SYSTEM_CODENAME=$(head -n 1 /etc/issue | awk '{print $2}')
-        return 0
+        SYSTEM_VERSION=$(head -n 1 /etc/issue | awk '{print $3}')
     fi
 
     # 4. 尝试读取 /etc/debian_version (适用于 Debian 系统)
@@ -32,7 +34,7 @@ get_system_info() {
         echo "通过 /etc/debian_version 获取系统信息"
         SYSTEM_NAME="Debian"
         SYSTEM_CODENAME=$(cat /etc/debian_version)
-        return 0
+        SYSTEM_VERSION=$SYSTEM_CODENAME
     fi
 
     # 5. 使用 dpkg 获取版本信息
@@ -40,7 +42,7 @@ get_system_info() {
         echo "通过 dpkg 获取系统信息"
         SYSTEM_NAME=$(dpkg --status lsb-release | grep "Package" | awk '{print $2}')
         SYSTEM_CODENAME=$(dpkg --status lsb-release | grep "Version" | awk '{print $2}')
-        return 0
+        SYSTEM_VERSION=$SYSTEM_CODENAME
     fi
 
     # 6. 使用 hostnamectl 获取系统信息（适用于 Systemd 系统）
@@ -48,21 +50,19 @@ get_system_info() {
         echo "通过 hostnamectl 获取系统信息"
         SYSTEM_NAME=$(hostnamectl | grep "Operating System" | awk -F ' : ' '{print $2}' | awk '{print $1}')
         SYSTEM_CODENAME=$(hostnamectl | grep "Operating System" | awk -F ' : ' '{print $2}' | awk '{print $2}')
-        return 0
+        SYSTEM_VERSION=$SYSTEM_CODENAME
     fi
 
     # 如果所有方法都无法获取系统信息，退出
-    echo "无法获取系统信息"
-    return 1
+    if [[ -z "$SYSTEM_NAME" || -z "$SYSTEM_CODENAME" || -z "$SYSTEM_VERSION" ]]; then
+        echo "无法获取系统信息"
+        exit 1
+    fi
 }
 
 # 获取系统信息
 get_system_info
-if [[ $? -ne 0 ]]; then
-    exit 1
-fi
-
-echo "系统信息: $SYSTEM_NAME $SYSTEM_CODENAME"
+echo "系统信息: $SYSTEM_NAME $SYSTEM_VERSION ($SYSTEM_CODENAME)"
 
 # 检查是否为 Ubuntu 或 Debian 系统
 if [[ "$SYSTEM_NAME" == "Ubuntu" ]]; then
@@ -74,8 +74,8 @@ else
     exit 1
 fi
 
-echo "系统类型: $SYSTEM_TYPE"
-echo "版本代号: $SYSTEM_CODENAME"
+# 显示当前版本并列出所有可用的版本
+echo "当前系统版本: $SYSTEM_VERSION"
 
 # 检查并更新系统
 echo "正在更新系统..."
