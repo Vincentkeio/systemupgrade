@@ -24,16 +24,19 @@ fi
 echo "正在修改系统升级设置，允许所有版本升级..."
 sudo sed -i 's/^Prompt=lts/Prompt=normal/' /etc/update-manager/release-upgrades
 
+# 使用 /etc/os-release 获取系统发行版和名称
+source /etc/os-release
+echo "操作系统: $NAME"
+echo "版本代号: $VERSION_CODENAME"
+
 # 使用 apt-cache 获取所有可用的升级版本
 echo "正在获取所有可用的版本..."
 available_versions=()
 
-# 获取当前系统包和候选版本
-if [[ $(lsb_release -i | awk '{print $2}') == "Ubuntu" ]]; then
-  # 获取 Ubuntu 系统的所有候选版本
+# 根据系统类型获取对应的版本
+if [[ "$NAME" == "Ubuntu" ]]; then
   available_versions+=($(apt-cache show ubuntu-release-upgrader-core | grep "Version:" | awk '{print $2}'))
-elif [[ $(lsb_release -i | awk '{print $2}') == "Debian" ]]; then
-  # 获取 Debian 系统的所有候选版本
+elif [[ "$NAME" == "Debian" ]]; then
   available_versions+=($(apt-cache show debian-release-upgrader-core | grep "Version:" | awk '{print $2}'))
 else
   echo "无法识别系统版本."
