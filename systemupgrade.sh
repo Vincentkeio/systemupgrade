@@ -80,20 +80,28 @@ echo "系统架构: $SYSTEM_ARCH"
 
 #!/bin/bash
 
-# 临时切换源为开发版源以检测更新版本
+# 函数：检查并安装 update-manager-core
+check_and_install_update_manager() {
+    echo "检查并安装 update-manager-core..."
+    if ! dpkg -l | grep -q update-manager-core; then
+        sudo apt update
+        sudo apt install update-manager-core -y
+    fi
+}
+
+# 函数：切换到开发版源以检测更新版本
 switch_to_dev_sources() {
     echo "临时切换源为开发版源以检测更新版本..."
 
     # 备份原来的 sources.list
     sudo cp /etc/apt/sources.list /etc/apt/sources.list.bak
 
-    # 添加提议版、更新版和开发版源
+    # 获取当前的 Ubuntu 代号
+    SYSTEM_CODENAME=$(lsb_release -c | awk '{print $2}')
+
+    # 启用开发版源和提议版源
     sudo sed -i "s/^deb http:\/\/archive.ubuntu.com\/ubuntu/\
 deb http:\/\/archive.ubuntu.com\/ubuntu/g" /etc/apt/sources.list
-
-    SYSTEM_CODENAME=$(lsb_release -c | awk '{print $2}')
-    
-    # 启用提议版源和更新版源
     echo "deb http://archive.ubuntu.com/ubuntu/ $SYSTEM_CODENAME-proposed main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
     echo "deb http://archive.ubuntu.com/ubuntu/ $SYSTEM_CODENAME-updates main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
 
@@ -108,104 +116,57 @@ restore_sources() {
     sudo apt update
 }
 
-# 获取当前系统的版本号
-get_current_version() {
-    SYSTEM_VERSION=$(lsb_release -sr)
-    echo "$SYSTEM_VERSION"
-}
-
 # 修改 /etc/update-manager/release-upgrades 以允许非 LTS 升级
 allow_non_lts_upgrade() {
     echo "修改 /etc/update-manager/release-upgrades 配置以允许非 LTS 升级..."
     sudo sed -i 's/Prompt=lts/Prompt=normal/' /etc/update-manager/release-upgrades
 }
 
-# 获取所有可用版本（包括开发版、提议版等）
-get_available_versions() {
-    local package_name="ubuntu-release-upgrader"
-    versions=$(apt-cache madison "$package_name" | awk '{print $3}')
-    echo "$versions"
+# 获取当前系统的版本号
+get_current_version() {
+    SYSTEM_VERSION=$(lsb_release -sr)
+    SYSTEM_NAME=$(lsb_release -si)
+    echo "$SYSTEM_VERSION"
 }
 
-# 升级过程
+# 检查是否可以升级
+check_for_upgrades() {
+    echo "检查是否可以升级..."
+    sudo do-release-upgrade -d --check-dist-upgrade
+
+    if [ $? -ne 0 ]; then
+        echo "当前系统已是最新版，无可用升级。"
+        exit 0
+    fi
+}
+
+# 执行升级
 perform_upgrade() {
     # 获取当前系统版本
     SYSTEM_VERSION=$(get_current_version)
 
+    # 检查并安装 update-manager-core
+    check_and_install_update_manager
+
+    # 修改配置文件，允许非 LTS 升级
+    allow_non_lts_upgrade
+
     # 切换到开发版源以便检测更多版本
     switch_to_dev_sources
 
-    # 获取所有可用版本
-    available_versions=$(get_available_versions)
+    # 检查系统是否有可用版本升级
+    check_for_upgrades
 
-    restore_sources  # 恢复原来的源配置
+    # 进行版本升级
+    echo "开始升级到最新版本..."
+    sudo do-release-upgrade -d -f DistUpgradeViewNonInteractive
 
-    # 如果没有可用版本
-    if [ -z "$available_versions" ]; then
-        echo "没有检测到新版本升级。"
-        exit 0
-    fi
-
-    # 检测出所有比当前版本更新的版本（包括完全版、实验版、开发版等）
-    echo "检测到以下可用版本（比当前版本更新）: "
-    versions=()
-    for version in $available_versions; do
-        if [[ "$version" > "$SYSTEM_VERSION" ]]; then
-            versions+=("$version")
-        fi
-    done
-
-    # 如果没有检测到可用的更高版本
-    if [ ${#versions[@]} -eq 0 ]; then
-        echo "已是最新版，无可用升级。"
-        exit 0
-    fi
-
-    # 列出可用版本并让用户选择
-    i=1
-    for version in "${versions[@]}"; do
-        echo "$i. $version"
-        ((i++))
-    done
-
-    # 用户选择要升级到的版本
-    read -p "请输入要升级到的版本号 (1-${#versions[@]}): " choice
-
-    if [[ "$choice" -lt 1 || "$choice" -gt "${#versions[@]}" ]]; then
-        echo "无效的选择，脚本退出."
-        exit 1
-    fi
-
-    # 获取选择的版本
-    selected_version=${versions[$((choice - 1))]}
-    echo "您选择了升级到: $selected_version"
-
-    # 执行升级（Ubuntu 和 Debian 的升级方式不同）
-    if [[ "$SYSTEM_NAME" == "Ubuntu" ]]; then
-        # 修改升级配置以允许非 LTS 升级
-        allow_non_lts_upgrade
-
-        # 执行升级
-        echo "正在升级到 $selected_version..."
-        sudo do-release-upgrade -d -f DistUpgradeViewNonInteractive
-    elif [[ "$SYSTEM_NAME" == "Debian" ]]; then
-        # Debian 使用修改 /etc/apt/sources.list 来进行升级
-        echo "正在升级到 Debian $selected_version..."
-
-        # 更新 sources.list 文件
-        sudo sed -i "s/$SYSTEM_CODENAME/$selected_version/g" /etc/apt/sources.list
-
-        # 更新包列表
-        sudo apt update
-
-        # 升级系统
-        sudo apt full-upgrade -y
-    fi
+    # 恢复源配置
+    restore_sources
 
     # 升级完成后提示
     echo "系统升级完成，请重启计算机以应用更改。"
 }
 
-# 执行升级
+# 执行升级过程
 perform_upgrade
-
