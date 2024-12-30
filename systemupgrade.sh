@@ -117,8 +117,9 @@ for version in $available_versions; do
   fi
 done
 
+# 如果没有检测到可用的更高版本
 if [ ${#versions[@]} -eq 0 ]; then
-  echo "没有检测到比当前版本更新的版本。"
+  echo "已是最新版，无可用升级。"
   exit 0
 fi
 
